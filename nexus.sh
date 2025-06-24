@@ -1,97 +1,59 @@
 #!/bin/bash
 
-# Install necessary packages
-echo "Installing necessary packages..."
+# Install Docker (only needed once)
+echo "Installing Docker..."
 sudo apt update
-sudo apt install -y protobuf-compiler docker.io jq curl iptables build-essential git wget lz4 make gcc nano automake autoconf tmux htop nvme-cli pkg-config libssl-dev libleveldb-dev tar clang bsdmainutils ncdu unzip
+sudo apt install -y docker.io curl ca-certificates
 sudo systemctl start docker
 sudo systemctl enable docker
-echo "Packages installed successfully."
+echo "Docker installed successfully."
 
-# Check if the directory exists
-if [ -d "nexus-docker" ]; then
-  echo "Directory nexus-docker already exists."
-else
-  mkdir nexus-docker
-  echo "Directory nexus-docker created."
-fi
+# Create working dir
+mkdir -p nexus-docker && cd nexus-docker
 
-# Navigate into the directory
-cd nexus-docker
+# Create Dockerfile
+cat <<EOL > Dockerfile
+FROM ubuntu:24.04
 
-# Create or replace the Dockerfile with the specified content
-cat <<EOL> Dockerfile
-FROM ubuntu:latest
-# Disable interactive configuration
 ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-c"]
 
-# Update and upgrade the system
-RUN apt-get update && apt-get install -y \\
-    curl \\
-    iptables \\
-    iproute2 \\
-    jq \\
-    nano \\
-    git \\
-    build-essential \\
-    wget \\
-    lz4 \\
-    make \\
-    gcc \\
-    automake \\
-    autoconf \\
-    tmux \\
-    htop \\
-    nvme-cli \\
-    pkg-config \\
-    libssl-dev \\
-    libleveldb-dev \\
-    tar \\
-    clang \\
-    bsdmainutils \\
-    ncdu \\
-    unzip \\
-    ca-certificates \\
-    protobuf-compiler
-
-# Install protoc
-RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v25.1/protoc-25.1-linux-x86_64.zip && \\
-    unzip -o protoc-25.1-linux-x86_64.zip -d /usr/local bin/protoc && \\
-    unzip -o protoc-25.1-linux-x86_64.zip -d /usr/local 'include/*' && \\
-    rm -f protoc-25.1-linux-x86_64.zip
+# Install dependencies
+RUN apt update && apt install -y \\
+    curl build-essential pkg-config libssl-dev \\
+    git protobuf-compiler ca-certificates bash && \\
+    rm -rf /var/lib/apt/lists/*
 
 # Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
 ENV PATH="/root/.cargo/bin:\${PATH}"
 
-# Add Rust target
+# Add riscv target
 RUN rustup target add riscv32i-unknown-none-elf
 
-# Run the Nexus command and then open a shell
-CMD ["bash", "-c", "curl -k https://cli.nexus.xyz/ | sh && exec /bin/bash"]
+# Default interactive shell
+CMD ["/bin/bash"]
 EOL
 
-# Detect existing nexus-docker instances and find the highest instance number
-existing_instances=$(docker ps -a --filter "name=nexus-docker-" --format "{{.Names}}" | grep -Eo 'nexus-docker-[0-9]+' | grep -Eo '[0-9]+' | sort -n | tail -1)
-
-# Set the instance number
-if [ -z "$existing_instances" ]; then
-  instance_number=1
-else
-  instance_number=$((existing_instances + 1))
-fi
-
-# Set the container name
+# Determine instance number
+existing_instances=$(docker ps -a --filter "name=nexus-docker-" --format "{{.Names}}" | grep -Eo '[0-9]+' | sort -n | tail -1)
+instance_number=$((existing_instances + 1))
 container_name="nexus-docker-$instance_number"
 
-# Create a data directory for the instance
+# Create persistent data folder
 data_dir="/root/nexus-data/$container_name"
 mkdir -p "$data_dir"
 
-# Build the Docker image with the specified name
+# Build the image
 docker build -t $container_name .
 
-# Display the completion message
-echo -e "\e[32mSetup is complete. To run the Docker container, use the following command:\e[0m"
+# Print instructions
+echo -e "\e[32mSetup complete. To run your Nexus container interactively:\e[0m"
 echo "docker run -it --name $container_name -v $data_dir:/root/.nexus $container_name"
-echo -e "\n\e[33mAfter starting the container, you'll need to manually enter your node ID when prompted.\e[0m"
+echo -e "\n\e[33mInside the container, run the following:\e[0m"
+echo -e "  source ~/.cargo/env"
+echo -e "  rustup target add riscv32i-unknown-none-elf"
+echo -e "  curl https://cli.nexus.xyz/ | bash"
+echo -e "  source ~/.bashrc"
+echo -e "  nexus-network start --node-id <your-node-id>"
+echo -e "\nUse \e[36mCtrl + P + Q\e[0m to detach after it's running."
