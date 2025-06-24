@@ -1,3 +1,4 @@
+# This will work for UBUNTU 22
 # Download this repo.
     git clone https://github.com/R1ghTsS/Nexus-Cli-Multiple-Docker.git && cd Nexus-Cli-Multiple-Docker
 # Install nexus
